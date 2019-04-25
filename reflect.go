@@ -99,6 +99,10 @@ type Reflector struct {
 	// ExpandedStruct will cause the toplevel definitions of the schema not
 	// be referenced itself to a definition.
 	ExpandedStruct bool
+
+	// IgnoredTypes defines a slice of types that should be ignored in the schema,
+	// switching to just allowing additional properties instead.
+	IgnoredTypes []interface{}
 }
 
 // Reflect reflects to Schema from a value.
@@ -245,6 +249,22 @@ func (r *Reflector) reflectTypeToSchema(definitions Definitions, t reflect.Type)
 
 // Refects a struct to a JSON Schema type.
 func (r *Reflector) reflectStruct(definitions Definitions, t reflect.Type) *Type {
+	for _, ignored := range r.IgnoredTypes {
+		if reflect.TypeOf(ignored) == t {
+			st := &Type{
+				Type:                 "object",
+				Properties:           map[string]*Type{},
+				AdditionalProperties: []byte("true"),
+			}
+			definitions[t.Name()] = st
+
+			return &Type{
+				Version: Version,
+				Ref:     "#/definitions/" + t.Name(),
+			}
+
+		}
+	}
 	st := &Type{
 		Type:                 "object",
 		Properties:           map[string]*Type{},
@@ -270,7 +290,7 @@ func (r *Reflector) reflectStructFields(st *Type, definitions Definitions, t ref
 		f := t.Field(i)
 		// anonymous and exported type should be processed recursively
 		// current type should inherit properties of anonymous one
-		if f.Anonymous && f.PkgPath == "" {
+		if f.Anonymous && f.PkgPath == "" && (f.Type.Kind() == reflect.Ptr || f.Type.Kind() == reflect.Struct) {
 			r.reflectStructFields(st, definitions, f.Type)
 			continue
 		}
